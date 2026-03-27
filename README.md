@@ -40,6 +40,62 @@ pip install -e '.[dev]'
 pytest
 ```
 
+## Build and use in another project
+
+### Build distributable artifacts
+
+From this repo root, install the standard build tool once (any environment), then produce a wheel and source distribution:
+
+```bash
+pip install build
+python -m build
+```
+
+Outputs land in `dist/`, for example `orchestrator-0.1.0-py3-none-any.whl` and `orchestrator-0.1.0.tar.gz`. Bump `version` in `pyproject.toml` when you cut a new release.
+
+### Install into another project
+
+**From the wheel (typical for a local or internal handoff):**
+
+```bash
+pip install /absolute/path/to/orchestratorv3/dist/orchestrator-0.1.0-py3-none-any.whl
+```
+
+**From the source tree (editable, good while both projects change):**
+
+```bash
+pip install -e /absolute/path/to/orchestratorv3
+```
+
+**From a Git URL (after you push the repo):**
+
+```bash
+pip install "git+https://example.com/your-org/orchestratorv3.git@v0.1.0"
+```
+
+After installation, import the package as `orchestrator` (see `orchestrator/` in this repo). The console entry point `orchestrator-serve` is also available if you need the bundled server runner.
+
+### Declare it as a dependency (consumer `pyproject.toml`)
+
+Point at a local path during development:
+
+```toml
+[project]
+dependencies = [
+    "orchestrator @ file:///absolute/path/to/orchestratorv3",
+]
+```
+
+Or at a built wheel:
+
+```toml
+dependencies = [
+    "orchestrator @ file:///absolute/path/to/orchestratorv3/dist/orchestrator-0.1.0-py3-none-any.whl",
+]
+```
+
+For a published package, use a normal version constraint once the project is on an index you configure (for example PyPI or a private package index).
+
 ## Demos
 
 Example clients live under [`demos/`](demos/README.md); that file documents the **command to run** for each script.
