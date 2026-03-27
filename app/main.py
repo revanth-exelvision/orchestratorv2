@@ -8,10 +8,13 @@ from pydantic import ValidationError
 
 from app.attachments import format_context_block, normalize_uploads
 from app.config import Settings, get_settings
+from app.flow_registry import get_flow, list_flow_summaries
 from app.graph import GRAPH, generate_plan, last_assistant_text, run_executor
 from app.models import (
     ExecutePayload,
     ExecuteResponse,
+    FlowSummary,
+    NamedFlowExecutePayload,
     OrchestratePayload,
     OrchestrateResponse,
     OrchestratorPlan,
@@ -82,6 +85,35 @@ async def orchestrate_execute_only(
     )
     messages = await run_executor(
         plan=body.plan.model_dump(mode="json"),
+        user_prompt=body.user_prompt,
+        attachment_context=attachment_context,
+        chat_history=[m.model_dump() for m in body.chat_history],
+        model_name=body.model,
+    )
+    return ExecuteResponse(answer=last_assistant_text(messages))
+
+
+@app.get("/orchestrate/flows", response_model=list[FlowSummary])
+def list_orchestrate_flows():
+    """List ids and metadata for server-defined plans invokable via POST /orchestrate/flows/{flow_id}."""
+    return list_flow_summaries()
+
+
+@app.post("/orchestrate/flows/{flow_id}", response_model=ExecuteResponse)
+async def orchestrate_named_flow(
+    flow_id: str,
+    body: NamedFlowExecutePayload,
+    settings: Annotated[Settings, Depends(get_settings)],
+):
+    """Run the ReAct executor with a pre-configured plan looked up by `flow_id`."""
+    plan = get_flow(flow_id)
+    if plan is None:
+        raise HTTPException(404, detail=f"Unknown flow_id: {flow_id}")
+    attachment_context = await _attachment_context_from_parts(
+        [], settings, body.context, body.metadata
+    )
+    messages = await run_executor(
+        plan=plan.model_dump(mode="json"),
         user_prompt=body.user_prompt,
         attachment_context=attachment_context,
         chat_history=[m.model_dump() for m in body.chat_history],

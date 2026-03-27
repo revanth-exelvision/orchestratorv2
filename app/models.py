@@ -38,6 +38,22 @@ class OrchestrateResponse(BaseModel):
     answer: str = Field("", description="Final assistant text from the executor agent")
 
 
+class FlowSummary(BaseModel):
+    flow_id: str
+    title: str = ""
+    description: str = ""
+
+
+class NamedFlowExecutePayload(BaseModel):
+    """Body for named pre-defined plan execution (plan is resolved server-side by flow_id)."""
+
+    user_prompt: str
+    chat_history: list[ChatMessageItem] = Field(default_factory=list)
+    model: str | None = None
+    context: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
+
+
 class ExecutePayload(BaseModel):
     """Body for executor-only: supply a plan (e.g. from /orchestrate/plan) plus the user turn and history."""
 

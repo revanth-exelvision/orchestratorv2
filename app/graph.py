@@ -5,8 +5,8 @@ from functools import lru_cache
 from typing import Any, NotRequired
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain.agents import create_agent
 from langgraph.graph import END, MessagesState, START, StateGraph
-from langgraph.prebuilt import create_react_agent
 
 from app.llm.factory import get_chat_model
 from app.models import OrchestratorPlan
@@ -51,7 +51,7 @@ def _resolve_model(state: OrchestratorState) -> str:
 @lru_cache(maxsize=32)
 def _compiled_agent(model: str):
     llm = get_chat_model(model)
-    return create_react_agent(llm, tools=TOOLS)
+    return create_agent(llm, TOOLS)
 
 
 def _planning_prompt(
