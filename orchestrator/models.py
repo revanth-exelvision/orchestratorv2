@@ -44,6 +44,13 @@ class FlowSummary(BaseModel):
     description: str = ""
 
 
+class ToolSummary(BaseModel):
+    """Registered LangChain tool as exposed to the planner and executor."""
+
+    name: str
+    description: str = ""
+
+
 class NamedFlowExecutePayload(BaseModel):
     """Body for named pre-defined plan execution (plan is resolved server-side by flow_id)."""
 
@@ -55,9 +62,16 @@ class NamedFlowExecutePayload(BaseModel):
 
 
 class ExecutePayload(BaseModel):
-    """Body for executor-only: supply a plan (e.g. from /orchestrate/plan) plus the user turn and history."""
+    """Body for executor-only: supply a plan (e.g. from /orchestrate/plan) plus the user turn and history.
 
-    plan: OrchestratorPlan
+    Plans may be produced entirely outside this service (e.g. another repo). Tool names in the plan must
+    match tools registered on the server (``create_app(tools=...)``); otherwise the executor cannot run those steps.
+    """
+
+    plan: OrchestratorPlan = Field(
+        ...,
+        description="Orchestrator plan; may originate from any client or service if tool names match the configured tool set.",
+    )
     user_prompt: str
     chat_history: list[ChatMessageItem] = Field(default_factory=list)
     model: str | None = None

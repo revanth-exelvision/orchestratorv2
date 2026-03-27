@@ -1,4 +1,4 @@
-from app.tools.sample_agents import bulletize_text, reverse_text, text_metrics
+from orchestrator.tools.sample_agents import bulletize_text, reverse_text, text_metrics
 
 
 def test_text_metrics():

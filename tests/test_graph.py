@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from app.graph import (
+from orchestrator.graph import (
     _build_executor_messages,
     _history_lines,
     _tools_manifest,
     last_assistant_text,
 )
-from app.tools import TOOLS
+from orchestrator.tools import TOOLS
 
 
 def test_last_assistant_text_prefers_latest_ai_string():
@@ -52,9 +52,13 @@ def test_history_lines_formats_roles():
 
 
 def test_tools_manifest_includes_registered_tools():
-    manifest = _tools_manifest()
+    manifest = _tools_manifest(TOOLS)
     for t in TOOLS:
         assert t.name in manifest
+
+
+def test_tools_manifest_empty_tools():
+    assert _tools_manifest(()) == ""
 
 
 def test_build_executor_messages_order_and_plan_in_system():

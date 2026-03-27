@@ -17,12 +17,14 @@ Set `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`). You can use a `.env` file 
 
 ```bash
 source .venv/bin/activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn orchestrator.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ## API
 
 - `GET /health`
+- `GET /orchestrate/tools` — registered tool names and descriptions (matches `create_app(tools=...)`)
+- `GET /orchestrate/flows` — named flow ids and metadata (matches `create_app(flows=...)`)
 - `POST /orchestrate/plan` — same JSON body as `/orchestrate/json`, but returns only the structured **plan** (no executor)
 - `POST /orchestrate/execute` — JSON body with an explicit **`plan`** plus `user_prompt` / `chat_history` / optional `context` / `metadata`; runs only the ReAct **executor**
 - `POST /orchestrate/json` — JSON body (`user_prompt`, `chat_history`, optional `model`, `context`, `metadata`)

@@ -5,8 +5,8 @@ from io import BytesIO
 import pytest
 from starlette.datastructures import UploadFile
 
-from app.attachments import format_context_block, normalize_uploads
-from app.config import Settings
+from orchestrator.attachments import format_context_block, normalize_uploads
+from orchestrator.config import Settings
 
 
 @pytest.mark.asyncio

@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import HTTPException, UploadFile
 
-from app.config import Settings
+from orchestrator.config import Settings
 
 
 def _is_textual_content_type(content_type: str) -> bool:

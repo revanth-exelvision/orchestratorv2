@@ -9,7 +9,7 @@ Small scripts that call the running API. Run them from the **repository root**.
    ```bash
    source .venv/bin/activate
    export OPENAI_API_KEY=sk-...
-   uvicorn app.main:app --host 127.0.0.1 --port 8000
+   uvicorn orchestrator.main:app --host 127.0.0.1 --port 8000
    ```
 
 2. **httpx** (if not already installed): `pip install httpx` or `pip install -e '.[dev]'`
@@ -31,6 +31,18 @@ No API key required.
 
 ```bash
 python demos/demo_health.py
+```
+
+---
+
+### `demo_list_catalog.py` — `GET /orchestrate/tools` and `GET /orchestrate/flows`
+
+Lists tool names/descriptions and named-flow ids (what the server was started with, including `create_app(tools=..., flows=...)`).
+
+No API key required.
+
+```bash
+python demos/demo_list_catalog.py
 ```
 
 ---

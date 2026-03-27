@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from langchain_core.messages import AIMessage
 
-from app.main import app
+from orchestrator.main import app
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def fake_graph_output() -> dict[str, Any]:
 def mock_graph(monkeypatch: pytest.MonkeyPatch, fake_graph_output: dict[str, Any]):
     graph = AsyncMock()
     graph.ainvoke = AsyncMock(return_value=fake_graph_output)
-    monkeypatch.setattr("app.main.GRAPH", graph)
+    monkeypatch.setattr("orchestrator.main.GRAPH", graph)
     return graph
 
 

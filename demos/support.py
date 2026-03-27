@@ -25,7 +25,7 @@ def connect_help() -> str:
         "Start the API from the repository root:\n"
         "  source .venv/bin/activate\n"
         "  export OPENAI_API_KEY=sk-...   # required for /orchestrate/plan and related routes\n"
-        "  uvicorn app.main:app --host 127.0.0.1 --port 8000\n"
+        "  uvicorn orchestrator.main:app --host 127.0.0.1 --port 8000\n"
     )
 
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from app.models import FlowSummary, OrchestratorPlan, PlanStep
+from collections.abc import Mapping
+
+from orchestrator.models import FlowSummary, OrchestratorPlan, PlanStep
 
 # flow_id -> (title, description, plan)
-_FLOWS: dict[str, tuple[str, str, OrchestratorPlan]] = {
+DEFAULT_FLOWS: dict[str, tuple[str, str, OrchestratorPlan]] = {
     "word_stats": (
         "Word statistics",
         "Count words in the user's message using the word_count tool.",
@@ -92,13 +94,20 @@ _FLOWS: dict[str, tuple[str, str, OrchestratorPlan]] = {
 }
 
 
-def list_flow_summaries() -> list[FlowSummary]:
+def list_flow_summaries(
+    flows: Mapping[str, tuple[str, str, OrchestratorPlan]] | None = None,
+) -> list[FlowSummary]:
+    registry = DEFAULT_FLOWS if flows is None else flows
     return [
         FlowSummary(flow_id=fid, title=meta[0], description=meta[1])
-        for fid, meta in sorted(_FLOWS.items(), key=lambda x: x[0])
+        for fid, meta in sorted(registry.items(), key=lambda x: x[0])
     ]
 
 
-def get_flow(flow_id: str) -> OrchestratorPlan | None:
-    entry = _FLOWS.get(flow_id)
+def get_flow(
+    flow_id: str,
+    flows: Mapping[str, tuple[str, str, OrchestratorPlan]] | None = None,
+) -> OrchestratorPlan | None:
+    registry = DEFAULT_FLOWS if flows is None else flows
+    entry = registry.get(flow_id)
     return entry[2] if entry else None

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import json
-from functools import lru_cache
+from collections.abc import Sequence
 from typing import Any, NotRequired
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain.agents import create_agent
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.tools import BaseTool
 from langgraph.graph import END, MessagesState, START, StateGraph
 
-from app.llm.factory import get_chat_model
-from app.models import OrchestratorPlan
-from app.tools import TOOLS
+from orchestrator.llm.factory import get_chat_model
+from orchestrator.models import OrchestratorPlan
+from orchestrator.tools import DEFAULT_TOOLS
 
 
 class OrchestratorState(MessagesState):
@@ -19,6 +20,14 @@ class OrchestratorState(MessagesState):
     chat_history: list[dict[str, str]]
     model_name: NotRequired[str | None]
     plan: NotRequired[dict | None]
+    tools: NotRequired[list[BaseTool]]
+
+
+def _resolve_tools(state: OrchestratorState) -> list[BaseTool]:
+    t = state.get("tools")
+    if t:
+        return list(t)
+    return list(DEFAULT_TOOLS)
 
 
 def _history_lines(history: list[dict[str, str]]) -> str:
@@ -27,16 +36,16 @@ def _history_lines(history: list[dict[str, str]]) -> str:
     return "\n".join(f"{m['role']}: {m['content']}" for m in history)
 
 
-def _tools_manifest() -> str:
+def _tools_manifest(tools: Sequence[BaseTool]) -> str:
     lines = []
-    for t in TOOLS:
+    for t in tools:
         desc = t.description or "(no description)"
         lines.append(f"- {t.name}: {desc}")
     return "\n".join(lines)
 
 
 def resolve_model_name(model_name: str | None) -> str:
-    from app.config import get_settings
+    from orchestrator.config import get_settings
 
     s = get_settings()
     if model_name and str(model_name).strip():
@@ -48,10 +57,18 @@ def _resolve_model(state: OrchestratorState) -> str:
     return resolve_model_name(state.get("model_name"))
 
 
-@lru_cache(maxsize=32)
-def _compiled_agent(model: str):
-    llm = get_chat_model(model)
-    return create_agent(llm, TOOLS)
+_agent_cache: dict[tuple[str, tuple[str, ...]], Any] = {}
+
+
+def _get_agent(model: str, tools: Sequence[BaseTool]):
+    sig = tuple(sorted(t.name for t in tools))
+    key = (model, sig)
+    cached = _agent_cache.get(key)
+    if cached is None:
+        llm = get_chat_model(model)
+        cached = create_agent(llm, list(tools))
+        _agent_cache[key] = cached
+    return cached
 
 
 def _planning_prompt(
@@ -59,10 +76,11 @@ def _planning_prompt(
     user_prompt: str,
     attachment_context: str,
     chat_history: list[dict[str, str]],
+    tools: Sequence[BaseTool],
 ) -> str:
     return f"""You are a planning component for an AI orchestrator.
 Available tools (name and description):
-{_tools_manifest()}
+{_tools_manifest(tools)}
 
 Prior chat (compact):
 {_history_lines(chat_history)}
@@ -83,9 +101,11 @@ async def generate_plan(
     attachment_context: str = "",
     chat_history: list[dict[str, str]] | None = None,
     model_name: str | None = None,
+    tools: Sequence[BaseTool] | None = None,
 ) -> OrchestratorPlan:
     """Structured plan only (no tool execution). Used by the graph plan node and by POST /orchestrate/plan."""
     history = chat_history or []
+    resolved_tools = list(tools) if tools is not None else list(DEFAULT_TOOLS)
     model = resolve_model_name(model_name)
     llm = get_chat_model(model)
     structured = llm.with_structured_output(OrchestratorPlan)
@@ -93,16 +113,19 @@ async def generate_plan(
         user_prompt=user_prompt,
         attachment_context=attachment_context,
         chat_history=history,
+        tools=resolved_tools,
     )
     return await structured.ainvoke([HumanMessage(content=prompt)])
 
 
 async def plan_node(state: OrchestratorState):
+    tools = _resolve_tools(state)
     plan = await generate_plan(
         user_prompt=state["user_prompt"],
         attachment_context=state.get("attachment_context") or "",
         chat_history=state["chat_history"],
         model_name=state.get("model_name"),
+        tools=tools,
     )
     return {"plan": plan.model_dump(mode="json")}
 
@@ -136,6 +159,7 @@ async def run_executor(
     attachment_context: str = "",
     chat_history: list[dict[str, str]] | None = None,
     model_name: str | None = None,
+    tools: Sequence[BaseTool] | None = None,
 ) -> list:
     """ReAct agent only (no planning). `plan` is the serialized orchestrator plan dict."""
     state: OrchestratorState = {
@@ -146,25 +170,28 @@ async def run_executor(
         "model_name": model_name,
         "plan": plan,
     }
+    resolved_tools = list(tools) if tools is not None else list(DEFAULT_TOOLS)
     model = _resolve_model(state)
-    agent = _compiled_agent(model)
+    agent = _get_agent(model, resolved_tools)
     messages = _build_executor_messages(state)
     out = await agent.ainvoke({"messages": messages})
     return out["messages"]
 
 
 async def execute_node(state: OrchestratorState):
+    tools = _resolve_tools(state)
     messages = await run_executor(
         plan=state.get("plan") or {},
         user_prompt=state["user_prompt"],
         attachment_context=state.get("attachment_context") or "",
         chat_history=state["chat_history"],
         model_name=state.get("model_name"),
+        tools=tools,
     )
     return {"messages": messages}
 
 
-def build_compiled_graph():
+def build_compiled_graph() -> Any:
     g = StateGraph(OrchestratorState)
     g.add_node("plan", plan_node)
     g.add_node("execute", execute_node)
