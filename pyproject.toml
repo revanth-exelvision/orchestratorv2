@@ -1,5 +1,5 @@
 [project]
-name = "orchestratorv3"
+name = "orchestrator"
 version = "0.1.0"
 description = "FastAPI + LangGraph orchestrator (plan then ReAct agent)"
 readme = "README.md"

@@ -5,7 +5,7 @@ FastAPI service that runs a **LangGraph** pipeline: structured **plan** (Pydanti
 ## Setup (use `.venv` only)
 
 ```bash
-cd /path/to/orchestratorv3
+cd /path/to/orchestrator
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
