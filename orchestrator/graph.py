@@ -10,6 +10,7 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, MessagesState, START, StateGraph
 
 from orchestrator.llm.factory import get_chat_model
+from orchestrator.llm_audit import get_llm_runnable_config
 from orchestrator.models import OrchestratorPlan
 from orchestrator.tools import DEFAULT_TOOLS
 
@@ -115,7 +116,10 @@ async def generate_plan(
         chat_history=history,
         tools=resolved_tools,
     )
-    return await structured.ainvoke([HumanMessage(content=prompt)])
+    return await structured.ainvoke(
+        [HumanMessage(content=prompt)],
+        config=get_llm_runnable_config("plan"),
+    )
 
 
 async def plan_node(state: OrchestratorState):
@@ -174,7 +178,10 @@ async def run_executor(
     model = _resolve_model(state)
     agent = _get_agent(model, resolved_tools)
     messages = _build_executor_messages(state)
-    out = await agent.ainvoke({"messages": messages})
+    out = await agent.ainvoke(
+        {"messages": messages},
+        config=get_llm_runnable_config("execute"),
+    )
     return out["messages"]
 
 

@@ -5,8 +5,10 @@ from collections.abc import Mapping, Sequence
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from langchain_core.tools import BaseTool
 from pydantic import ValidationError
+from starlette.responses import JSONResponse
 
 from orchestrator.attachments import format_context_block, normalize_uploads
 from orchestrator.config import Settings, get_settings
@@ -28,7 +30,10 @@ from orchestrator.models import (
     OrchestratorPlan,
     ToolSummary,
 )
+from orchestrator.logging_setup import configure_logging, get_logger
 from orchestrator.tools import DEFAULT_TOOLS
+
+logger = get_logger(__name__)
 
 
 def create_app(
@@ -41,9 +46,25 @@ def create_app(
     Host projects can ``pip install`` this package and call ``create_app(tools=my_tools, flows=my_flows)``
     to serve orchestration with domain-specific tools and plans.
     """
+    configure_logging()
     app = FastAPI(title="Orchestrator", version="0.1.0")
     app.state.tools = list(tools) if tools is not None else list(DEFAULT_TOOLS)
     app.state.flow_registry = dict(flows) if flows is not None else dict(DEFAULT_FLOWS)
+
+    @app.middleware("http")
+    async def log_unhandled_exceptions(request: Request, call_next):
+        try:
+            return await call_next(request)
+        except HTTPException:
+            raise
+        except RequestValidationError:
+            raise
+        except Exception:
+            logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error"},
+            )
 
     @app.get("/health")
     def health():
