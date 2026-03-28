@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     max_upload_bytes_per_file: int = 2 * 1024 * 1024
     max_total_request_bytes: int = 25 * 1024 * 1024
 
+    log_level: str = "INFO"
+    log_dir: str = "logs"
+    llm_audit_enabled: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:
