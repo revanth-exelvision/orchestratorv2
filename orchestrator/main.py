@@ -11,7 +11,13 @@ from pydantic import ValidationError
 from orchestrator.attachments import format_context_block, normalize_uploads
 from orchestrator.config import Settings, get_settings
 from orchestrator.flow_registry import DEFAULT_FLOWS, get_flow, list_flow_summaries
-from orchestrator.graph import GRAPH, generate_plan, last_assistant_text, run_executor
+from orchestrator.graph import (
+    GRAPH,
+    generate_plan,
+    last_assistant_text,
+    run_executor,
+    serialize_executor_messages,
+)
 from orchestrator.models import (
     ExecutePayload,
     ExecuteResponse,
@@ -78,8 +84,13 @@ def create_app(
         }
         out = await GRAPH.ainvoke(state)
         plan = OrchestratorPlan.model_validate(out["plan"])
-        answer = last_assistant_text(out.get("messages", []))
-        return OrchestrateResponse(plan=plan, answer=answer)
+        exec_messages = out.get("messages", [])
+        answer = last_assistant_text(exec_messages)
+        return OrchestrateResponse(
+            plan=plan,
+            answer=answer,
+            messages=serialize_executor_messages(exec_messages),
+        )
 
     def _payload_from_json_str(raw: str) -> OrchestratePayload:
         try:
@@ -109,7 +120,10 @@ def create_app(
             model_name=body.model,
             tools=request.app.state.tools,
         )
-        return ExecuteResponse(answer=last_assistant_text(messages))
+        return ExecuteResponse(
+            answer=last_assistant_text(messages),
+            messages=serialize_executor_messages(messages),
+        )
 
     @app.get("/orchestrate/tools", response_model=list[ToolSummary])
     def list_orchestrate_tools(request: Request):
@@ -146,7 +160,10 @@ def create_app(
             model_name=body.model,
             tools=request.app.state.tools,
         )
-        return ExecuteResponse(answer=last_assistant_text(messages))
+        return ExecuteResponse(
+            answer=last_assistant_text(messages),
+            messages=serialize_executor_messages(messages),
+        )
 
     @app.post("/orchestrate/plan", response_model=OrchestratorPlan)
     async def orchestrate_plan_only(

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from orchestrator.graph import (
     _build_executor_messages,
     _history_lines,
     _tools_manifest,
     last_assistant_text,
+    serialize_executor_messages,
 )
 from orchestrator.tools import TOOLS
 
@@ -23,6 +24,26 @@ def test_last_assistant_text_prefers_latest_ai_string():
 def test_last_assistant_text_empty():
     assert last_assistant_text([]) == ""
     assert last_assistant_text([HumanMessage(content="only user")]) == ""
+
+
+def test_serialize_executor_messages_round_trip_ai_and_tool():
+    msgs = [
+        AIMessage(
+            content="calling",
+            tool_calls=[
+                {"name": "echo_text", "args": {"text": "x"}, "id": "call-1", "type": "tool_call"},
+            ],
+        ),
+        ToolMessage(content="x", tool_call_id="call-1"),
+        AIMessage(content="done"),
+    ]
+    raw = serialize_executor_messages(msgs)
+    assert len(raw) == 3
+    assert raw[0]["type"] == "ai"
+    assert raw[0]["tool_calls"]
+    assert raw[1]["type"] == "tool"
+    assert raw[1]["tool_call_id"] == "call-1"
+    assert raw[2]["content"] == "done"
 
 
 def test_last_assistant_text_list_content_blocks():

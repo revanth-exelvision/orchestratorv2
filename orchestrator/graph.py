@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from typing import Any, NotRequired
 
 from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, MessagesState, START, StateGraph
 
@@ -219,3 +219,14 @@ def last_assistant_text(messages: list) -> str:
                 if text:
                     return text
     return ""
+
+
+def serialize_executor_messages(messages: list[Any]) -> list[dict[str, Any]]:
+    """Turn LangChain messages from the executor into JSON-safe dicts for API responses."""
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        if isinstance(m, BaseMessage):
+            out.append(m.model_dump(mode="json", exclude_none=True))
+        else:
+            out.append({"type": "unknown", "repr": repr(m)})
+    return out

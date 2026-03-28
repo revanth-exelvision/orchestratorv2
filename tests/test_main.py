@@ -155,6 +155,10 @@ def test_orchestrate_json_success(client: TestClient, mock_graph, fake_graph_out
     data = r.json()
     assert data["plan"]["goal_summary"] == fake_graph_output["plan"]["goal_summary"]
     assert data["answer"] == "Here is the final answer."
+    assert isinstance(data["messages"], list)
+    assert len(data["messages"]) == 1
+    assert data["messages"][0]["type"] == "ai"
+    assert data["messages"][0]["content"] == "Here is the final answer."
     mock_graph.ainvoke.assert_awaited_once()
     call_state = mock_graph.ainvoke.call_args[0][0]
     assert call_state["user_prompt"] == "Hello"
@@ -225,7 +229,11 @@ def test_orchestrate_execute_only(client: TestClient, monkeypatch: pytest.Monkey
         },
     )
     assert r.status_code == 200
-    assert r.json() == {"answer": "executor done"}
+    body = r.json()
+    assert body["answer"] == "executor done"
+    assert len(body["messages"]) == 1
+    assert body["messages"][0]["type"] == "ai"
+    assert body["messages"][0]["content"] == "executor done"
 
 
 def test_orchestrate_execute_only_validation_error(client: TestClient, monkeypatch: pytest.MonkeyPatch):
@@ -267,7 +275,9 @@ def test_orchestrate_multipart_success(client: TestClient, mock_graph):
         data={"payload": payload},
     )
     assert r.status_code == 200
-    assert r.json()["answer"] == "Here is the final answer."
+    data = r.json()
+    assert data["answer"] == "Here is the final answer."
+    assert data["messages"][0]["content"] == "Here is the final answer."
 
 
 def test_orchestrate_multipart_invalid_json(client: TestClient, mock_graph):
@@ -381,7 +391,9 @@ def test_orchestrate_named_flow_success(client: TestClient, monkeypatch: pytest.
         },
     )
     assert r.status_code == 200
-    assert r.json() == {"answer": "named flow done"}
+    body = r.json()
+    assert body["answer"] == "named flow done"
+    assert body["messages"][0]["content"] == "named flow done"
     assert captured["user_prompt"] == "Count these words"
     assert captured["chat_history"] == [{"role": "user", "content": "prior"}]
     plan = captured["plan"]

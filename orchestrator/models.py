@@ -36,6 +36,10 @@ class OrchestratorPlan(BaseModel):
 class OrchestrateResponse(BaseModel):
     plan: OrchestratorPlan
     answer: str = Field("", description="Final assistant text from the executor agent")
+    messages: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Full executor message trace (LangChain messages as JSON-serializable dicts)",
+    )
 
 
 class FlowSummary(BaseModel):
@@ -81,3 +85,7 @@ class ExecutePayload(BaseModel):
 
 class ExecuteResponse(BaseModel):
     answer: str = Field("", description="Final assistant text from the ReAct executor")
+    messages: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Full executor message trace (LangChain messages as JSON-serializable dicts)",
+    )
