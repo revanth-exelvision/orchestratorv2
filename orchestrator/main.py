@@ -43,13 +43,20 @@ def create_app(
     *,
     tools: Sequence[BaseTool] | None = None,
     flows: Mapping[str, tuple[str, str, OrchestratorPlan]] | None = None,
+    settings: Settings | None = None,
 ) -> FastAPI:
     """Build a FastAPI app with configurable LangChain tools and named-flow registry.
 
     Host projects can ``pip install`` this package and call ``create_app(tools=my_tools, flows=my_flows)``
     to serve orchestration with domain-specific tools and plans.
+
+    Route visibility is controlled by :class:`~orchestrator.config.Settings` (env / ``.env``), or pass
+    ``settings=`` to override for tests or embedding. Disabled routes are omitted (404). Defaults expose
+    only ``GET /health``; enable orchestration via env (e.g. ``API_ORCHESTRATE_ENABLED=true``) or
+    ``settings=Settings.with_all_orchestration_routes()``.
     """
     configure_logging()
+    cfg = settings if settings is not None else get_settings()
     app = FastAPI(title="Orchestrator", version="0.1.0")
     app.state.tools = list(tools) if tools is not None else list(DEFAULT_TOOLS)
     app.state.flow_registry = dict(flows) if flows is not None else dict(DEFAULT_FLOWS)
@@ -69,9 +76,11 @@ def create_app(
                 content={"detail": "Internal server error"},
             )
 
-    @app.get("/health")
-    def health():
-        return {"status": "ok"}
+    if cfg.api_health_enabled:
+
+        @app.get("/health")
+        def health():
+            return {"status": "ok"}
 
     def _check_multipart_content_length(request: Request, settings: Settings) -> None:
         cl = request.headers.get("content-length")
@@ -170,106 +179,116 @@ def create_app(
             messages=serialize_executor_messages(exec_messages),
         )
 
-    @app.post("/orchestrate/execute", response_model=ExecuteResponse)
-    async def orchestrate_execute_only(
-        request: Request,
-        settings: Annotated[Settings, Depends(get_settings)],
-    ):
-        """Run only the ReAct executor with a supplied plan (no planner call).
+    if cfg.api_orchestrate_execute_enabled:
 
-        JSON body (`ExecutePayload`) or multipart form: `payload` (JSON string, same shape) and optional `files`.
-        """
-        body, files = await _json_or_multipart_body(request, settings, ExecutePayload)
-        attachment_context = await _attachment_context_from_parts(
-            files, settings, body.context, body.metadata
-        )
-        messages = await run_executor(
-            plan=body.plan.model_dump(mode="json"),
-            user_prompt=body.user_prompt,
-            attachment_context=attachment_context,
-            chat_history=[m.model_dump() for m in body.chat_history],
-            model_name=body.model,
-            tools=request.app.state.tools,
-        )
-        return ExecuteResponse(
-            answer=last_assistant_text(messages),
-            messages=serialize_executor_messages(messages),
-        )
+        @app.post("/orchestrate/execute", response_model=ExecuteResponse)
+        async def orchestrate_execute_only(
+            request: Request,
+            settings: Annotated[Settings, Depends(get_settings)],
+        ):
+            """Run only the ReAct executor with a supplied plan (no planner call).
 
-    @app.get("/orchestrate/tools", response_model=list[ToolSummary])
-    def list_orchestrate_tools(request: Request):
-        """List tools registered on this app (same set used by plan and execute)."""
-        return [
-            ToolSummary(name=t.name, description=(t.description or "").strip())
-            for t in request.app.state.tools
-        ]
+            JSON body (`ExecutePayload`) or multipart form: `payload` (JSON string, same shape) and optional `files`.
+            """
+            body, files = await _json_or_multipart_body(request, settings, ExecutePayload)
+            attachment_context = await _attachment_context_from_parts(
+                files, settings, body.context, body.metadata
+            )
+            messages = await run_executor(
+                plan=body.plan.model_dump(mode="json"),
+                user_prompt=body.user_prompt,
+                attachment_context=attachment_context,
+                chat_history=[m.model_dump() for m in body.chat_history],
+                model_name=body.model,
+                tools=request.app.state.tools,
+            )
+            return ExecuteResponse(
+                answer=last_assistant_text(messages),
+                messages=serialize_executor_messages(messages),
+            )
 
-    @app.get("/orchestrate/flows", response_model=list[FlowSummary])
-    def list_orchestrate_flows(request: Request):
-        """List ids and metadata for server-defined plans invokable via POST /orchestrate/flows/{flow_id}."""
-        return list_flow_summaries(request.app.state.flow_registry)
+    if cfg.api_orchestrate_tools_enabled:
 
-    @app.post("/orchestrate/flows/{flow_id}", response_model=ExecuteResponse)
-    async def orchestrate_named_flow(
-        flow_id: str,
-        request: Request,
-        settings: Annotated[Settings, Depends(get_settings)],
-    ):
-        """Run the ReAct executor with a pre-configured plan looked up by `flow_id`.
+        @app.get("/orchestrate/tools", response_model=list[ToolSummary])
+        def list_orchestrate_tools(request: Request):
+            """List tools registered on this app (same set used by plan and execute)."""
+            return [
+                ToolSummary(name=t.name, description=(t.description or "").strip())
+                for t in request.app.state.tools
+            ]
 
-        JSON body (`NamedFlowExecutePayload`) or multipart: `payload` (JSON string, same shape) and optional `files`.
-        """
-        plan = get_flow(flow_id, request.app.state.flow_registry)
-        if plan is None:
-            raise HTTPException(404, detail=f"Unknown flow_id: {flow_id}")
-        body, files = await _json_or_multipart_body(request, settings, NamedFlowExecutePayload)
-        attachment_context = await _attachment_context_from_parts(
-            files, settings, body.context, body.metadata
-        )
-        messages = await run_executor(
-            plan=plan.model_dump(mode="json"),
-            user_prompt=body.user_prompt,
-            attachment_context=attachment_context,
-            chat_history=[m.model_dump() for m in body.chat_history],
-            model_name=body.model,
-            tools=request.app.state.tools,
-        )
-        return ExecuteResponse(
-            answer=last_assistant_text(messages),
-            messages=serialize_executor_messages(messages),
-        )
+    if cfg.api_orchestrate_flows_enabled:
 
-    @app.post("/orchestrate/plan", response_model=OrchestratorPlan)
-    async def orchestrate_plan_only(
-        request: Request,
-        settings: Annotated[Settings, Depends(get_settings)],
-    ):
-        """Run only the planning LLM (structured `OrchestratorPlan`); does not invoke the ReAct executor.
+        @app.get("/orchestrate/flows", response_model=list[FlowSummary])
+        def list_orchestrate_flows(request: Request):
+            """List ids and metadata for server-defined plans invokable via POST /orchestrate/flows/{flow_id}."""
+            return list_flow_summaries(request.app.state.flow_registry)
 
-        JSON body (`OrchestratePayload`) or multipart: `payload` (JSON string, same shape) and optional `files`.
-        """
-        body, files = await _json_or_multipart_body(request, settings, OrchestratePayload)
-        attachment_context = await _attachment_context_for_payload(body, files, settings)
-        return await generate_plan(
-            user_prompt=body.user_prompt,
-            attachment_context=attachment_context,
-            chat_history=[m.model_dump() for m in body.chat_history],
-            model_name=body.model,
-            tools=request.app.state.tools,
-        )
+        @app.post("/orchestrate/flows/{flow_id}", response_model=ExecuteResponse)
+        async def orchestrate_named_flow(
+            flow_id: str,
+            request: Request,
+            settings: Annotated[Settings, Depends(get_settings)],
+        ):
+            """Run the ReAct executor with a pre-configured plan looked up by `flow_id`.
 
-    @app.post("/orchestrate", response_model=OrchestrateResponse)
-    @app.post("/orchestrate/json", response_model=OrchestrateResponse)
-    async def orchestrate(
-        request: Request,
-        settings: Annotated[Settings, Depends(get_settings)],
-    ):
-        """Full graph: plan then execute. JSON (`OrchestratePayload`), multipart, or urlencoded `payload`; optional `files` on multipart.
+            JSON body (`NamedFlowExecutePayload`) or multipart: `payload` (JSON string, same shape) and optional `files`.
+            """
+            plan = get_flow(flow_id, request.app.state.flow_registry)
+            if plan is None:
+                raise HTTPException(404, detail=f"Unknown flow_id: {flow_id}")
+            body, files = await _json_or_multipart_body(request, settings, NamedFlowExecutePayload)
+            attachment_context = await _attachment_context_from_parts(
+                files, settings, body.context, body.metadata
+            )
+            messages = await run_executor(
+                plan=plan.model_dump(mode="json"),
+                user_prompt=body.user_prompt,
+                attachment_context=attachment_context,
+                chat_history=[m.model_dump() for m in body.chat_history],
+                model_name=body.model,
+                tools=request.app.state.tools,
+            )
+            return ExecuteResponse(
+                answer=last_assistant_text(messages),
+                messages=serialize_executor_messages(messages),
+            )
 
-        ``/orchestrate/json`` is the same handler (backward-compatible alias).
-        """
-        body, files = await _json_or_multipart_body(request, settings, OrchestratePayload)
-        return await _run_orchestration(body, files, settings, request)
+    if cfg.api_orchestrate_plan_enabled:
+
+        @app.post("/orchestrate/plan", response_model=OrchestratorPlan)
+        async def orchestrate_plan_only(
+            request: Request,
+            settings: Annotated[Settings, Depends(get_settings)],
+        ):
+            """Run only the planning LLM (structured `OrchestratorPlan`); does not invoke the ReAct executor.
+
+            JSON body (`OrchestratePayload`) or multipart: `payload` (JSON string, same shape) and optional `files`.
+            """
+            body, files = await _json_or_multipart_body(request, settings, OrchestratePayload)
+            attachment_context = await _attachment_context_for_payload(body, files, settings)
+            return await generate_plan(
+                user_prompt=body.user_prompt,
+                attachment_context=attachment_context,
+                chat_history=[m.model_dump() for m in body.chat_history],
+                model_name=body.model,
+                tools=request.app.state.tools,
+            )
+
+    if cfg.api_orchestrate_enabled:
+
+        @app.post("/orchestrate", response_model=OrchestrateResponse)
+        @app.post("/orchestrate/json", response_model=OrchestrateResponse)
+        async def orchestrate(
+            request: Request,
+            settings: Annotated[Settings, Depends(get_settings)],
+        ):
+            """Full graph: plan then execute. JSON (`OrchestratePayload`), multipart, or urlencoded `payload`; optional `files` on multipart.
+
+            ``/orchestrate/json`` is the same handler (backward-compatible alias).
+            """
+            body, files = await _json_or_multipart_body(request, settings, OrchestratePayload)
+            return await _run_orchestration(body, files, settings, request)
 
     return app
 

@@ -20,6 +20,35 @@ source .venv/bin/activate
 uvicorn orchestrator.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+The bundled [`orchestrator.main:app`](orchestrator/main.py) uses [`Settings`](orchestrator/config.py) from the environment (and optional `.env`). **By default only `GET /health` is registered**; orchestration routes are off until you enable them. See [API route configuration](#api-route-configuration).
+
+## API route configuration
+
+HTTP routes are toggled by [`Settings`](orchestrator/config.py) (`api_*_enabled` fields). When a flag is `false`, that route is **not registered** (clients get **404**, and it does not appear in OpenAPI). Values are read from the environment (uppercase names) or a `.env` file in the working directory.
+
+| Setting | Environment variable | Routes |
+|--------|----------------------|--------|
+| `api_health_enabled` | `API_HEALTH_ENABLED` | `GET /health` |
+| `api_orchestrate_enabled` | `API_ORCHESTRATE_ENABLED` | `POST /orchestrate`, `POST /orchestrate/json` |
+| `api_orchestrate_plan_enabled` | `API_ORCHESTRATE_PLAN_ENABLED` | `POST /orchestrate/plan` |
+| `api_orchestrate_execute_enabled` | `API_ORCHESTRATE_EXECUTE_ENABLED` | `POST /orchestrate/execute` |
+| `api_orchestrate_tools_enabled` | `API_ORCHESTRATE_TOOLS_ENABLED` | `GET /orchestrate/tools` |
+| `api_orchestrate_flows_enabled` | `API_ORCHESTRATE_FLOWS_ENABLED` | `GET /orchestrate/flows`, `POST /orchestrate/flows/{flow_id}` |
+
+**Defaults:** all orchestration flags are `false`; `api_health_enabled` is `true`.
+
+**Enable everything via `.env` (example):**
+
+```env
+API_ORCHESTRATE_ENABLED=true
+API_ORCHESTRATE_PLAN_ENABLED=true
+API_ORCHESTRATE_EXECUTE_ENABLED=true
+API_ORCHESTRATE_TOOLS_ENABLED=true
+API_ORCHESTRATE_FLOWS_ENABLED=true
+```
+
+**Or in code** when calling [`create_app`](orchestrator/main.py): pass `settings=Settings.with_all_orchestration_routes()` to register health plus every `/orchestrate*` handler, or construct [`Settings`](orchestrator/config.py) with only the flags you need.
+
 ## Registering tools and flows
 
 Host applications pass tools and named flows into [`create_app`](orchestrator/main.py). That factory stores them on `app.state`; planning, execution, and `GET /orchestrate/tools` / `GET /orchestrate/flows` all use the same registry.
@@ -44,6 +73,7 @@ Host applications pass tools and named flows into [`create_app`](orchestrator/ma
 # myapp.py — run with: uvicorn myapp:app --host 0.0.0.0 --port 8000
 from langchain.tools import tool
 
+from orchestrator.config import Settings
 from orchestrator.flow_registry import DEFAULT_FLOWS
 from orchestrator.main import create_app
 from orchestrator.models import OrchestratorPlan, PlanStep
@@ -76,7 +106,11 @@ my_flows = {
     ),
 }
 
-app = create_app(tools=[*DEFAULT_TOOLS, shout], flows={**DEFAULT_FLOWS, **my_flows})
+app = create_app(
+    tools=[*DEFAULT_TOOLS, shout],
+    flows={**DEFAULT_FLOWS, **my_flows},
+    settings=Settings.with_all_orchestration_routes(),
+)
 ```
 
 If you replace `DEFAULT_FLOWS` entirely with plans that only use your own tools, you can pass `tools=[shout]` and `flows=my_flows` alone.
@@ -90,6 +124,8 @@ If you replace `DEFAULT_FLOWS` entirely with plans that only use your own tools,
 - **`application/x-www-form-urlencoded`** — field `payload` only (JSON string); file uploads are not available on this encoding.
 
 File uploads are always optional. Text-like files are inlined into the planner/executor context; other types are noted as non-text (see [`orchestrator/attachments.py`](orchestrator/attachments.py)).
+
+Each path below is served only when the matching [`Settings`](orchestrator/config.py) flag is enabled (see [API route configuration](#api-route-configuration)).
 
 - `GET /health`
 - `GET /orchestrate/tools` — registered tool names and descriptions (matches `create_app(tools=...)`)
@@ -149,7 +185,7 @@ pip install "git+https://example.com/your-org/orchestratorv2.git@v0.1.0"
 - **Python import:** use the package name `orchestrator` (see the `orchestrator/` package in this repo).
 - **CLI:** `orchestrator-serve` runs the bundled server (defined in `pyproject.toml` as `[project.scripts]`).
 - **Environment:** set `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`) in the environment or a `.env` file wherever you run the app.
-- **As a service:** if the other project only needs the HTTP API, run this package’s FastAPI app (for example `uvicorn orchestrator.main:app` or `orchestrator-serve`) and call the endpoints documented under [API](#api) above.
+- **As a service:** if the other project only needs the HTTP API, run this package’s FastAPI app (for example `uvicorn orchestrator.main:app` or `orchestrator-serve`) and call the endpoints documented under [API](#api) above. Enable orchestration routes with environment variables or `Settings.with_all_orchestration_routes()` as described under [API route configuration](#api-route-configuration).
 - **In-process:** import from `orchestrator` and compose or extend the same building blocks this repo uses (FastAPI factory, graph, tools) if you need the logic inside another application.
 
 ### Declare it as a dependency (consumer `pyproject.toml`)

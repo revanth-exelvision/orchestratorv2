@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock
 import pytest
 from langchain_core.messages import AIMessage
 
-from orchestrator.main import app
+from orchestrator.config import Settings
+from orchestrator.main import create_app
 
 
 @pytest.fixture
@@ -38,7 +39,12 @@ def mock_graph(monkeypatch: pytest.MonkeyPatch, fake_graph_output: dict[str, Any
 
 
 @pytest.fixture
-def client(mock_graph):
+def app(mock_graph):
+    return create_app(settings=Settings.with_all_orchestration_routes())
+
+
+@pytest.fixture
+def client(app):
     from fastapi.testclient import TestClient
 
     with TestClient(app) as c:

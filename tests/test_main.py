@@ -5,7 +5,6 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from orchestrator.main import app
 from orchestrator.tools import DEFAULT_TOOLS
 
 
@@ -18,6 +17,7 @@ def test_health(client: TestClient):
 def test_create_app_replaces_flow_registry():
     from fastapi.testclient import TestClient
 
+    from orchestrator.config import Settings
     from orchestrator.main import create_app
     from orchestrator.models import OrchestratorPlan
 
@@ -32,7 +32,7 @@ def test_create_app_replaces_flow_registry():
             ),
         ),
     }
-    application = create_app(flows=custom)
+    application = create_app(flows=custom, settings=Settings.with_all_orchestration_routes())
     with TestClient(application) as tc:
         r = tc.get("/orchestrate/flows")
         assert r.status_code == 200
@@ -45,6 +45,7 @@ def test_create_app_custom_tools_propagate_to_execute(monkeypatch: pytest.Monkey
 
     from fastapi.testclient import TestClient
 
+    from orchestrator.config import Settings
     from orchestrator.main import create_app
 
     @tool
@@ -59,7 +60,7 @@ def test_create_app_custom_tools_propagate_to_execute(monkeypatch: pytest.Monkey
         return [AIMessage(content="done")]
 
     monkeypatch.setattr("orchestrator.main.run_executor", fake_run_executor)
-    application = create_app(tools=[only_external_tool])
+    application = create_app(tools=[only_external_tool], settings=Settings.with_all_orchestration_routes())
     with TestClient(application) as tc:
         r = tc.post(
             "/orchestrate/execute",
@@ -81,6 +82,7 @@ def test_create_app_custom_tools_propagate_to_plan(monkeypatch: pytest.MonkeyPat
 
     from fastapi.testclient import TestClient
 
+    from orchestrator.config import Settings
     from orchestrator.main import create_app
     from orchestrator.models import OrchestratorPlan
 
@@ -100,7 +102,7 @@ def test_create_app_custom_tools_propagate_to_plan(monkeypatch: pytest.MonkeyPat
         )
 
     monkeypatch.setattr("orchestrator.main.generate_plan", fake_generate_plan)
-    application = create_app(tools=[plan_external_tool])
+    application = create_app(tools=[plan_external_tool], settings=Settings.with_all_orchestration_routes())
     with TestClient(application) as tc:
         r = tc.post("/orchestrate/plan", json={"user_prompt": "plan this"})
     assert r.status_code == 200
@@ -116,6 +118,7 @@ def test_create_app_custom_tools_in_graph_state_for_json_route(monkeypatch: pyte
 
     from fastapi.testclient import TestClient
 
+    from orchestrator.config import Settings
     from orchestrator.main import create_app
 
     @tool
@@ -136,7 +139,7 @@ def test_create_app_custom_tools_in_graph_state_for_json_route(monkeypatch: pyte
     )
     monkeypatch.setattr("orchestrator.main.GRAPH", graph)
 
-    application = create_app(tools=[json_route_tool])
+    application = create_app(tools=[json_route_tool], settings=Settings.with_all_orchestration_routes())
     with TestClient(application) as tc:
         r = tc.post("/orchestrate/json", json={"user_prompt": "symptoms"})
     assert r.status_code == 200
@@ -299,7 +302,9 @@ def test_orchestrate_multipart_invalid_payload_shape(client: TestClient, mock_gr
     mock_graph.ainvoke.assert_not_awaited()
 
 
-def test_orchestrate_multipart_content_length_too_large(client: TestClient, mock_graph):
+def test_orchestrate_multipart_content_length_too_large(
+    client: TestClient, app, mock_graph
+):
     from orchestrator.config import Settings, get_settings
 
     app.dependency_overrides[get_settings] = lambda: Settings(max_total_request_bytes=100)
@@ -332,6 +337,7 @@ def test_list_orchestrate_tools_matches_create_app_tools():
 
     from fastapi.testclient import TestClient
 
+    from orchestrator.config import Settings
     from orchestrator.main import create_app
 
     @tool
@@ -339,7 +345,7 @@ def test_list_orchestrate_tools_matches_create_app_tools():
         """Only tool on this app instance."""
         return x
 
-    application = create_app(tools=[catalog_only_tool])
+    application = create_app(tools=[catalog_only_tool], settings=Settings.with_all_orchestration_routes())
     with TestClient(application) as tc:
         r = tc.get("/orchestrate/tools")
     assert r.status_code == 200
@@ -508,3 +514,38 @@ def test_orchestrate_json_multipart_file_in_graph_state(client: TestClient, mock
     assert "Uploaded files" in ac
     assert "data.txt" in ac
     assert "payload-bytes" in ac
+
+
+def test_create_app_respects_api_route_settings():
+    from orchestrator.config import Settings
+    from orchestrator.main import create_app
+
+    application = create_app(
+        settings=Settings(
+            api_health_enabled=False,
+            api_orchestrate_enabled=False,
+            api_orchestrate_plan_enabled=False,
+            api_orchestrate_execute_enabled=False,
+            api_orchestrate_tools_enabled=False,
+            api_orchestrate_flows_enabled=False,
+        )
+    )
+    with TestClient(application) as tc:
+        assert tc.get("/health").status_code == 404
+        assert tc.post("/orchestrate", json={"user_prompt": "x"}).status_code == 404
+        assert tc.post("/orchestrate/json", json={"user_prompt": "x"}).status_code == 404
+        assert tc.post("/orchestrate/plan", json={"user_prompt": "x"}).status_code == 404
+        assert tc.post("/orchestrate/execute", json={"user_prompt": "x"}).status_code == 404
+        assert tc.get("/orchestrate/tools").status_code == 404
+        assert tc.get("/orchestrate/flows").status_code == 404
+        assert tc.post("/orchestrate/flows/x", json={"user_prompt": "x"}).status_code == 404
+
+
+def test_create_app_single_route_disabled():
+    from orchestrator.config import Settings
+    from orchestrator.main import create_app
+
+    application = create_app(settings=Settings(api_orchestrate_tools_enabled=False))
+    with TestClient(application) as tc:
+        assert tc.get("/orchestrate/tools").status_code == 404
+        assert tc.get("/health").status_code == 200

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,6 +18,26 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_dir: str = "logs"
     llm_audit_enabled: bool = True
+
+    # API route toggles. Disabled routes are not registered (404). By default only GET /health is on.
+    api_health_enabled: bool = True
+    api_orchestrate_enabled: bool = False  # POST /orchestrate, /orchestrate/json
+    api_orchestrate_plan_enabled: bool = False
+    api_orchestrate_execute_enabled: bool = False
+    api_orchestrate_tools_enabled: bool = False
+    api_orchestrate_flows_enabled: bool = False  # GET /flows, POST /flows/{id}
+
+    @classmethod
+    def with_all_orchestration_routes(cls) -> Settings:
+        """Enable every HTTP route (health + all ``/orchestrate*`` handlers)."""
+        return cls(
+            api_health_enabled=True,
+            api_orchestrate_enabled=True,
+            api_orchestrate_plan_enabled=True,
+            api_orchestrate_execute_enabled=True,
+            api_orchestrate_tools_enabled=True,
+            api_orchestrate_flows_enabled=True,
+        )
 
 
 @lru_cache
